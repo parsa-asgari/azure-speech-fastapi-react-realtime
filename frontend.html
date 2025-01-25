@@ -1,0 +1,72 @@
+<script>
+    const subscriptionKey = "your_subscription_key";
+    const serviceRegion = "your_service_region";
+
+    let audioConfig;
+    let speechConfig;
+    let recognizer;
+    let accumulatedTranscription = "";
+
+    document.getElementById('startButton').addEventListener('click', function () {
+        startListening();
+    });
+
+    document.getElementById('stopButton').addEventListener('click', function () {
+        stopListening();
+    });
+
+    function startListening() {
+        speechConfig = SpeechSDK.SpeechConfig.fromSubscription(subscriptionKey, serviceRegion);
+        audioConfig = SpeechSDK.AudioConfig.fromDefaultMicrophoneInput();
+
+        recognizer = new SpeechSDK.SpeechRecognizer(speechConfig, audioConfig);
+
+        recognizer.recognizing = function (s, e) {
+            document.getElementById('transcription').innerText = e.result.text;
+        };
+
+        recognizer.recognized = function (s, e) {
+            if (e.result.reason === SpeechSDK.ResultReason.RecognizedSpeech) {
+                document.getElementById('transcription').innerText = e.result.text;
+                accumulatedTranscription += e.result.text + "\n";
+            } else if (e.result.reason === SpeechSDK.ResultReason.NoMatch) {
+                document.getElementById('transcription').innerText = "No speech could be recognized.";
+            }
+        };
+
+        recognizer.canceled = function (s, e) {
+            console.error(`Canceled: ${e.reason}`);
+            if (e.reason === SpeechSDK.CancellationReason.Error) {
+                console.error(`Error details: ${e.errorDetails}`);
+            }
+            stopListening();
+        };
+
+        recognizer.sessionStopped = function (s, e) {
+            console.log("Session stopped.");
+            stopListening();
+        };
+
+        recognizer.startContinuousRecognitionAsync();
+
+        document.getElementById('startButton').disabled = true;
+        document.getElementById('stopButton').disabled = false;
+    }
+
+    function stopListening() {
+        recognizer.stopContinuousRecognitionAsync(() => {
+            recognizer.close();
+            recognizer = undefined;
+            
+            // Enable download link
+            const blob = new Blob([accumulatedTranscription], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const downloadLink = document.getElementById('downloadLink');
+            downloadLink.href = url;
+            downloadLink.style.display = 'block';
+        });
+
+        document.getElementById('startButton').disabled = false;
+        document.getElementById('stopButton').disabled = true;
+    }
+</script>
