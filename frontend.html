@@ -1,72 +1,68 @@
-<script>
-    const subscriptionKey = "your_subscription_key";
-    const serviceRegion = "your_service_region";
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Real Time Speech Recognition</title>
+</head>
+<body>
+    <!-- Your custom UI here -->
+    <button onclick="start_microphone()">Start Recording</button>
+    <button onclick="stop_microphone()">Stop Recording</button>
 
-    let audioConfig;
-    let speechConfig;
-    let recognizer;
-    let accumulatedTranscription = "";
+    <!-- The Javascript code that handles the streaming process -->
+    <script>
+        let mediaRecorder;
+        let ws;
+        /* Handle the websocket audio chunk streaming */
+        const start_microphone = async () => {
+            ws = new WebSocket("ws://localhost:8000/ws");
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs:opus' });
 
-    document.getElementById('startButton').addEventListener('click', function () {
-        startListening();
-    });
+            try {
+                // If websocket is opened
+                ws.onopen = () => {
+                    /* Sends a message in the client console when the websocket is opened */
+                    console.log("WebSocket connection opened.");
+                };
 
-    document.getElementById('stopButton').addEventListener('click', function () {
-        stopListening();
-    });
+                // If message is received from server
+                ws.onmessage = (e) => {
+                    /* Sends the received message from the API when it's available*/
+                    console.log("Received message:", e.data);
+                };
 
-    function startListening() {
-        speechConfig = SpeechSDK.SpeechConfig.fromSubscription(subscriptionKey, serviceRegion);
-        audioConfig = SpeechSDK.AudioConfig.fromDefaultMicrophoneInput();
+                // If media recorder data stream is available
+                mediaRecorder.ondataavailable = (e) => {
+                    /* Sends the audio chunk whenever is available and the websocket is opened */
+                    if (e.data.size > 0 && ws.readyState === WebSocket.OPEN) {
+                        ws.send(e.data);
+                        /* Shows the chunk info that has been sent */
+                        console.log(e.data);
+                    }
+                };
 
-        recognizer = new SpeechSDK.SpeechRecognizer(speechConfig, audioConfig);
+            // Waits 100ms before sending a new data chunk
+            mediaRecorder.start(100); 
 
-        recognizer.recognizing = function (s, e) {
-            document.getElementById('transcription').innerText = e.result.text;
-        };
-
-        recognizer.recognized = function (s, e) {
-            if (e.result.reason === SpeechSDK.ResultReason.RecognizedSpeech) {
-                document.getElementById('transcription').innerText = e.result.text;
-                accumulatedTranscription += e.result.text + "\n";
-            } else if (e.result.reason === SpeechSDK.ResultReason.NoMatch) {
-                document.getElementById('transcription').innerText = "No speech could be recognized.";
+            } catch (error) { // In case there is an error
+                console.error("Error accessing microphone:", error);
             }
         };
 
-        recognizer.canceled = function (s, e) {
-            console.error(`Canceled: ${e.reason}`);
-            if (e.reason === SpeechSDK.CancellationReason.Error) {
-                console.error(`Error details: ${e.errorDetails}`);
+        const stop_microphone = () => {
+            if (mediaRecorder && mediaRecorder.state === "recording") {
+                mediaRecorder.stop();
+                mediaRecorder.stream.getTracks().forEach(track => track.stop());
             }
-            stopListening();
+            if (ws) {
+                ws.close();
+                ws.onclose = () => {
+                    console.log("WebSocket connection closed.");
+                };
+            }
         };
-
-        recognizer.sessionStopped = function (s, e) {
-            console.log("Session stopped.");
-            stopListening();
-        };
-
-        recognizer.startContinuousRecognitionAsync();
-
-        document.getElementById('startButton').disabled = true;
-        document.getElementById('stopButton').disabled = false;
-    }
-
-    function stopListening() {
-        recognizer.stopContinuousRecognitionAsync(() => {
-            recognizer.close();
-            recognizer = undefined;
-            
-            // Enable download link
-            const blob = new Blob([accumulatedTranscription], { type: 'text/plain' });
-            const url = URL.createObjectURL(blob);
-            const downloadLink = document.getElementById('downloadLink');
-            downloadLink.href = url;
-            downloadLink.style.display = 'block';
-        });
-
-        document.getElementById('startButton').disabled = false;
-        document.getElementById('stopButton').disabled = true;
-    }
-</script>
+    </script>
+</body>
+</html>
